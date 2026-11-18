@@ -63,3 +63,56 @@ With just 23 people, the chance of a shared birthday was already about 52%.
 It reached about 97% with 50 people. As the group gets larger, there are
 more pairs of people who could share a birthday.
 
+## Problem 2
+
+Each CSV file contains eight weekly observations for one participant.
+I used the filename to identify the study arm and participant ID.
+
+```{r}
+participant_files =
+  tibble(
+    file_name = list.files("data", pattern = "[.]csv$"),
+    path = file.path("data", file_name)
+  ) |>
+  mutate(data = map(path, read_csv, show_col_types = FALSE))
+```
+
+```{r}
+longitudinal_data =
+  participant_files |>
+  mutate(file_name = stringr::str_remove(file_name, "[.]csv$")) |>
+  separate(file_name, into = c("arm", "subject_id"), sep = "_") |>
+  mutate(arm = recode(arm, con = "Control", exp = "Experimental")) |>
+  select(-path) |>
+  unnest(data) |>
+  pivot_longer(
+    cols = starts_with("week_"),
+    names_to = "week",
+    names_prefix = "week_",
+    values_to = "observation"
+  ) |>
+  mutate(week = as.integer(week))
+
+longitudinal_data
+```
+
+```{r spaghetti-plot, fig.width=7, fig.height=4.5}
+longitudinal_data |>
+  ggplot(aes(
+    x = week, y = observation,
+    group = interaction(arm, subject_id), color = arm
+  )) +
+  geom_line(alpha = 0.7) +
+  scale_x_continuous(breaks = 1:8) +
+  labs(
+    title = "Weekly observations by study arm",
+    x = "Week",
+    y = "Observation",
+    color = "Study arm"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+The two groups overlap early in the study. Most experimental participants
+have higher observations in the later weeks than at the start. The control
+participants' observations fluctuate over time, with no consistent increase.
