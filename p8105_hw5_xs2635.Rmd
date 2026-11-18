@@ -116,3 +116,100 @@ longitudinal_data |>
 The two groups overlap early in the study. Most experimental participants
 have higher observations in the later weeks than at the start. The control
 participants' observations fluctuate over time, with no consistent increase.
+
+## Problem 3
+
+For each true mean from 0 to 6, I generated 5,000 samples of size 30
+from a normal distribution with a standard deviation of 5. I used a
+two-sided one-sample t-test to test whether the population mean was zero.
+
+```{r ttest-simulation}
+set.seed(8106)
+
+simulate_t_test = function(true_mean) {
+  sample_data = rnorm(30, mean = true_mean, sd = 5)
+
+  broom::tidy(t.test(sample_data, mu = 0))
+}
+
+test_results =
+  expand_grid(
+    true_mean = 0:6,
+    iter = 1:5000
+  ) |>
+  mutate(test_result = map(true_mean, simulate_t_test)) |>
+  unnest(test_result) |>
+  select(true_mean, iter, estimate, p.value) |>
+  mutate(reject = p.value < 0.05)
+```
+
+For each true mean, I calculated the fraction of tests that rejected the
+null and compared the average estimate before and after filtering by
+statistical significance.
+
+```{r ttest-summary}
+test_summary =
+  test_results |>
+  group_by(true_mean) |>
+  summarize(
+    rejection_rate = mean(reject),
+    mean_all = mean(estimate),
+    mean_rejected = mean(estimate[reject])
+  )
+```
+
+```{r ttest-power-plot, fig.width=7, fig.height=4}
+test_summary |>
+  ggplot(aes(x = true_mean, y = rejection_rate)) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = 0:6) +
+  labs(
+    title = "How often does the t-test reject the null?",
+    x = "True mean",
+    y = "Proportion of tests rejecting the null"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+When the true mean was zero, the test rejected about 5.5% of the time,
+which is close to the 5% significance level. As the true mean moved
+farther from zero, power increased. By a true mean of 4, the test
+rejected about 99% of the time.
+
+```{r ttest-est-plot, fig.width=7, fig.height=4.5}
+test_summary |>
+  select(
+    true_mean,
+    `All samples` = mean_all,
+    `Rejected tests only` = mean_rejected
+  ) |>
+  pivot_longer(
+    cols = -true_mean,
+    names_to = "sample_group",
+    values_to = "average_estimate"
+  ) |>
+  ggplot(aes(x = true_mean, y = average_estimate, color = sample_group)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = 0:6) +
+  labs(
+    title = "How does keeping only significant results change the estimate?",
+    x = "True mean",
+    y = "Average estimated mean",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+The dashed line shows where the average estimate equals the true mean.
+The average across all samples stayed close to this line because the
+sample mean is unbiased. When the true mean was 1, the overall average
+was about 1.00, but it was 2.24 among rejected tests. At small positive
+true means, samples with unusually high means are more likely to give
+significant results. At a true mean of 0, the two-sided test can
+select extreme estimates in either direction, so the average among
+rejected tests stays close to zero. At larger true means, nearly every
+test rejects and the two averages are similar.
